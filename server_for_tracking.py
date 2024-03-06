@@ -1,4 +1,3 @@
-print("STARTED!!!!")
 import socket
 import time
 import sys
@@ -6,13 +5,13 @@ import cv2
 import imutils
 from yoloDet import YoloTRT
 import os
-
+import threading
 
 model = YoloTRT(library="yolov5/build/libmyplugins.so", engine="yolov5/build/yolov5s.engine", conf=0.5, yolo_ver="v5")
 # [{'class': 'Note', 'conf': 0.6934612, 'box': array([164.14363, 129.19603, 280.63977, 219.     ], dtype=float32)}]
 cap = cv2.VideoCapture(0)
 print('captured')
-
+conn=None
 def predict():
         ret, frame = cap.read()
         print('ret:',ret)
@@ -21,8 +20,6 @@ def predict():
         #print('DETECTIONS:',detections)
         # for obj in detections:
         #    print(obj['class'], obj['conf'], obj['box'])
-        print("FPS: {} sec".format(1/t))
-        print('predicted in',t)
         # Only show output if a display is available
         if 'DISPLAY' in os.environ:
                 cv2.imshow("Output", frame)
@@ -48,13 +45,21 @@ print('host:',host)
 host_ip = socket.gethostbyname(host)
 port = 5800  # initiate port no above 1024
 print('host:',host_ip)
+host_ip='10.21.2.86'
 server_socket.bind((host_ip, port))  # bind host address and port together
 def connect():
     #server_socket.bind((host_ip, port))  # bind host address and port together
     #binding is potentially part of connecting?
     print('listening for connetions...')
+        
+    #listens for up to 5 clients
     server_socket.listen(5)
+
+    #makes conn and address accessible to other parts of the code
+    global conn
+    global address
     connect.conn, connect.address = server_socket.accept()  # accept new connection
+    conn,address=connect.conn, connect.address
     print("Connection from: " + str(connect.address)) 
 
 def send_data(data,conn,delay=0,verbose=False):
@@ -71,9 +76,11 @@ def server_program():
     frame_counter = 1
     bounding_box_counter=0
     while True:
-        #connect()
-        #conn= connect.conn
-        #address =  connect.address
+        connect()
+        global conn
+        global address
+        conn= connect.conn
+        address =  connect.address
         while True:
             try:
                 bounding_boxes=predict()
@@ -94,17 +101,29 @@ def server_program():
                 #message indicating end
                 bounding_box_str+=f'E\n'
                 print('bounding box str:',bounding_box_str)
+                    
                 #Sending the data to robo rio
-                #send_data(bounding_box_str,conn,delay=3,verbose=True)
+                send_data(bounding_box_str,conn,verbose=True)
+                    
                 frame_counter+=1
-            except BrokenPipeError:
+            except (BrokenPipeError,ConnectionResetError,ConnectionAbortedError,ConnectionError) as e:
                 print('DISCONNECTED. attempting reconnecting...')
                 break
         
-    conn.close()  # close the connection
+    #conn.close() (closes the connection, I'll potentially use this later)
     
+def listen():
+    while True:
+        if conn and conn is not None:
+            data = conn.recv(1024).decode()
+            if not data:
+                print('not recieving any data')
+            else:
+                print('data:',data)
+prediction_thread = threading.Thread(target=server_program)
+listening_thread = threading.Thread(target=listen)
 
 print("TESTING!")
 if __name__ == '__main__':
-
-    server_program()
+    prediction_thread.start()
+    listening_thread.start()
