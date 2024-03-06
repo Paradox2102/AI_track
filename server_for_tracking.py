@@ -6,7 +6,7 @@ import imutils
 from yoloDet import YoloTRT
 import os
 import threading
-
+#MAKE SURE TO IMPLEMENT THIS: nano /home/paradox/JetsonYolov5/yoloDet.py THEN import pycuda.autoinit 
 model = YoloTRT(library="yolov5/build/libmyplugins.so", engine="yolov5/build/yolov5s.engine", conf=0.5, yolo_ver="v5")
 # [{'class': 'Note', 'conf': 0.6934612, 'box': array([164.14363, 129.19603, 280.63977, 219.     ], dtype=float32)}]
 cap = cv2.VideoCapture(0)
