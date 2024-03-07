@@ -13,8 +13,8 @@ model = YoloTRT(library="yolov5/build/libmyplugins.so", engine="yolov5/build/yol
 # [{'class': 'Note', 'conf': 0.6934612, 'box': array([164.14363, 129.19603, 280.63977, 219.     ], dtype=float32)}]
 
 cap = cv2.VideoCapture(0)
-conn=None
-
+conn=None # while the connection is None, the listening thread doesnt run
+#the listening thread runs when connection is successful 
 port = 5800  # initiate port no above 1024
 host_ip='10.21.2.86' #optimize so we can get IP from hostname
 test_without_connection=True # testing without clients connecting to server
