@@ -15,7 +15,7 @@ conn=None
 
 port = 5800  # initiate port no above 1024
 host_ip='10.21.2.86' #optimize so we can get IP from hostname
-test_without_connection=True
+test_without_connection=True # testing without clients connecting to server
 
 if test_without_connection:
     print('NOT SENDING DATA, TESTING WITHOUT HOSTS!')
