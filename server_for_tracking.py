@@ -9,44 +9,50 @@ import threading
 #MAKE SURE TO IMPLEMENT THIS: nano /home/paradox/JetsonYolov5/yoloDet.py THEN import pycuda.autoinit 
 model = YoloTRT(library="yolov5/build/libmyplugins.so", engine="yolov5/build/yolov5s.engine", conf=0.5, yolo_ver="v5")
 # [{'class': 'Note', 'conf': 0.6934612, 'box': array([164.14363, 129.19603, 280.63977, 219.     ], dtype=float32)}]
+
 cap = cv2.VideoCapture(0)
 conn=None
+
+port = 5800  # initiate port no above 1024
+host_ip='10.21.2.86' #optimize so we can get IP from hostname
+test_without_connection=True
+
+if test_without_connection:
+    print('NOT SENDING DATA, TESTING WITHOUT HOSTS!')
+else:
+    print('PREPARING TO CONNECT WITH HOSTS!')
 def predict():
-        ret, frame = cap.read()
-        if ret:
-                frame = imutils.resize(frame, width=352,height=320)
-                detections, t = model.Inference(frame)
-                #print('DETECTIONS:',detections)
-                # for obj in detections:
-                #    print(obj['class'], obj['conf'], obj['box'])
-                # Only show output if a display is available
-                if 'DISPLAY' in os.environ:
-                        cv2.imshow("Output", frame)
-                        key = cv2.waitKey(1)
-                        if key == ord('q'):
-                                #break
-                                pass
-                else:
+    ret, frame = cap.read()
+    if ret:
+        frame = imutils.resize(frame, width=352,height=320)
+        detections, t = model.Inference(frame)
+        #print('DETECTIONS:',detections)
+        # for obj in detections:
+        #    print(obj['class'], obj['conf'], obj['box'])
+        # Only show output if a display is available
+        if 'DISPLAY' in os.environ:
+                cv2.imshow("Output", frame)
+                key = cv2.waitKey(1)
+                if key == ord('q'):
+                        #break
                         pass
-                        #print("No display available, skipping visualization.")
-                boxes=[]
-                if len(detections)>0:
-                        for i,v in enumerate(detections):
-                                box=v['box']
-                                boxes.append(box)
-                
-                return boxes
         else:
-                print('camera not functioning')
-                return 'camera not functioning'
+                print("No display available, skipping visualization.")
+        boxes=[]
+        if len(detections)>0:
+                for i,v in enumerate(detections):
+                        box=v['box']
+                        boxes.append(box)
+        
+        return boxes
+    else:
+        print('camera not functioning')
+        return 'camera not functioning'
 
 print(f'hostname:{socket.gethostbyname(socket.gethostname())}')
 server_socket = socket.socket()  # get instance
 #host = socket.gethostname()
 #host_ip = socket.gethostbyname(host)
-
-port = 5800  # initiate port no above 1024
-host_ip='10.21.2.86' #optimize so we can get IP from hostname
 
 server_socket.bind((host_ip, port))  # bind host address and port together
 
@@ -75,7 +81,8 @@ def server_program():
     frame_counter = 1
     bounding_box_counter=0
     while True:
-        connect()
+        if not test_without_connection:
+            connect()
         global conn
         global address
         conn= connect.conn
@@ -84,29 +91,30 @@ def server_program():
             try:
                 bounding_boxes=predict()
                 if bounding_boxes!='camera not functioning':
-                        #preparing the string to be sent over to the robo rio
-                        bounding_box_str=''
+                    #preparing the string to be sent over to the robo rio
+                    bounding_box_str=''
                         
-                        #message indicating start
-                        bounding_box_str+= f'''\nF {frame_counter} 352 320\n'''
-        
-                        #bounding box messages
-        
-                        for index,box in enumerate(bounding_boxes):
-                            x1,y1,x2,y2=box
-                            x1,y1,x2,y2 = int(round(x1)),int(round(y1)),int(round(x2)),int(round(y2))
-                            bounding_box_str+=f'R {x1} {y1} {x2} {y2}\n'
+                    #message indicating start
+                    bounding_box_str+= f'''\nF {frame_counter} 352 320\n'''
+    
+                    #bounding box messages
+    
+                    for index,box in enumerate(bounding_boxes):
+                        x1,y1,x2,y2=box
+                        x1,y1,x2,y2 = int(round(x1)),int(round(y1)),int(round(x2)),int(round(y2))
+                        bounding_box_str+=f'R {x1} {y1} {x2} {y2}\n'
+                    
+                    #message indicating end
+                    bounding_box_str+=f'E\n'
+                    print('bounding box str:',bounding_box_str)
                         
-                        #message indicating end
-                        bounding_box_str+=f'E\n'
-                        print('bounding box str:',bounding_box_str)
-                            
-                        #Sending the data to robo rio
+                    #Sending the data to robo rio
+                    if not test_without_connection:
                         send_data(bounding_box_str,conn,verbose=True)
-                            
-                        frame_counter+=1
+                        
+                    frame_counter+=1
                 else:
-                        print('predictions not working because camera is not functioning')
+                    print('predictions not working because camera is not functioning')
             except (BrokenPipeError,ConnectionResetError,ConnectionAbortedError,ConnectionError) as e:
                 print('DISCONNECTED. attempting reconnecting...')
                 break
