@@ -6,6 +6,8 @@ import imutils
 from yoloDet import YoloTRT
 import os
 import threading
+import pycuda.driver as cuda
+
 #MAKE SURE TO IMPLEMENT THIS: nano /home/paradox/JetsonYolov5/yoloDet.py THEN import pycuda.autoinit 
 model = YoloTRT(library="yolov5/build/libmyplugins.so", engine="yolov5/build/yolov5s.engine", conf=0.5, yolo_ver="v5")
 # [{'class': 'Note', 'conf': 0.6934612, 'box': array([164.14363, 129.19603, 280.63977, 219.     ], dtype=float32)}]
@@ -16,6 +18,7 @@ conn=None
 port = 5800  # initiate port no above 1024
 host_ip='10.21.2.86' #optimize so we can get IP from hostname
 test_without_connection=True # testing without clients connecting to server
+fps_verbose=True #prints out FPS
 
 if test_without_connection:
     print('NOT SENDING DATA, TESTING WITHOUT HOSTS!')
@@ -31,18 +34,18 @@ def predict():
         #    print(obj['class'], obj['conf'], obj['box'])
         # Only show output if a display is available
         if 'DISPLAY' in os.environ:
-                cv2.imshow("Output", frame)
-                key = cv2.waitKey(1)
-                if key == ord('q'):
-                        #break
-                        pass
+            cv2.imshow("Output", frame)
+            key = cv2.waitKey(1)
+            if key == ord('q'):
+                #break
+                pass
         else:
-                print("No display available, skipping visualization.")
+            print("No display available, skipping visualization.")
         boxes=[]
         if len(detections)>0:
-                for i,v in enumerate(detections):
-                        box=v['box']
-                        boxes.append(box)
+            for i,v in enumerate(detections):
+                box=v['box']
+                boxes.append(box)
         
         return boxes
     else:
@@ -53,8 +56,8 @@ print(f'hostname:{socket.gethostbyname(socket.gethostname())}')
 server_socket = socket.socket()  # get instance
 #host = socket.gethostname()
 #host_ip = socket.gethostbyname(host)
-
-server_socket.bind((host_ip, port))  # bind host address and port together
+if not test_without_connection:
+    server_socket.bind((host_ip, port))  # bind host address and port together
 
 def connect():
     #server_socket.bind((host_ip, port))  # bind host address and port together
@@ -63,7 +66,6 @@ def connect():
         
     #listens for up to 5 clients
     server_socket.listen(5)
-
     #makes conn and address accessible to other parts of the code
     global conn
     global address
@@ -80,17 +82,20 @@ def send_data(data,conn,delay=0,verbose=False):
 def server_program():
     frame_counter = 1
     bounding_box_counter=0
+
     while True:
         if not test_without_connection:
             connect()
         global conn
         global address
-        conn= connect.conn
-        address =  connect.address
+        if not test_without_connection:
+            conn= connect.conn
+            address =  connect.address
         while True:
             try:
                 bounding_boxes=predict()
                 if bounding_boxes!='camera not functioning':
+                    time1=time.time()
                     #preparing the string to be sent over to the robo rio
                     bounding_box_str=''
                         
@@ -113,12 +118,16 @@ def server_program():
                         send_data(bounding_box_str,conn,verbose=True)
                         
                     frame_counter+=1
+                    time2=time.time()
+                    time_taken=time1-time2
+                    if fps_verbose:
+                        print('fps:',1/time_taken)
+
                 else:
                     print('predictions not working because camera is not functioning')
             except (BrokenPipeError,ConnectionResetError,ConnectionAbortedError,ConnectionError) as e:
                 print('DISCONNECTED. attempting reconnecting...')
-                break
-        
+                break  
     #conn.close() (closes the connection, I'll potentially use this later)
     
 def listen():
