@@ -6,9 +6,9 @@ import imutils
 from yoloDet import YoloTRT
 import os
 import threading
-import pycuda.driver as cuda
-
-#MAKE SURE TO IMPLEMENT THIS: nano /home/paradox/JetsonYolov5/yoloDet.py THEN import pycuda.autoinit 
+import pycuda.driver as cuda  # Add this line to initialize CUDA context
+#MAKE SURE TO IMPLEMENT THIS: nano /home/paradox/JetsonYolov5/yoloDet.py THEN import pycuda.autoinit
+cuda.init()
 model = YoloTRT(library="yolov5/build/libmyplugins.so", engine="yolov5/build/yolov5s.engine", conf=0.5, yolo_ver="v5")
 # [{'class': 'Note', 'conf': 0.6934612, 'box': array([164.14363, 129.19603, 280.63977, 219.     ], dtype=float32)}]
 
@@ -18,7 +18,6 @@ conn=None
 port = 5800  # initiate port no above 1024
 host_ip='10.21.2.86' #optimize so we can get IP from hostname
 test_without_connection=True # testing without clients connecting to server
-fps_verbose=True #prints out FPS
 
 if test_without_connection:
     print('NOT SENDING DATA, TESTING WITHOUT HOSTS!')
@@ -82,7 +81,9 @@ def send_data(data,conn,delay=0,verbose=False):
 def server_program():
     frame_counter = 1
     bounding_box_counter=0
-
+    cuda.init()
+    device = cuda.Device(0)
+    ctx = device.make_context()
     while True:
         if not test_without_connection:
             connect()
@@ -92,13 +93,15 @@ def server_program():
             conn= connect.conn
             address =  connect.address
         while True:
-            try:
+            try: 
+                time1=time.time()
+                #after you finished the operations of inference/detection:
                 bounding_boxes=predict()
+                ctx.pop()
+                ctx.push()
                 if bounding_boxes!='camera not functioning':
-                    time1=time.time()
                     #preparing the string to be sent over to the robo rio
                     bounding_box_str=''
-                        
                     #message indicating start
                     bounding_box_str+= f'''\nF {frame_counter} 352 320\n'''
     
@@ -119,9 +122,8 @@ def server_program():
                         
                     frame_counter+=1
                     time2=time.time()
-                    time_taken=time1-time2
-                    if fps_verbose:
-                        print('fps:',1/time_taken)
+                    time_taken=time2-time1
+                    print('fps:',1/time_taken)
 
                 else:
                     print('predictions not working because camera is not functioning')
@@ -129,7 +131,7 @@ def server_program():
                 print('DISCONNECTED. attempting reconnecting...')
                 break  
     #conn.close() (closes the connection, I'll potentially use this later)
-    
+    ctx.pop()
 def listen():
     while True:
         if conn and conn is not None:
@@ -138,8 +140,8 @@ def listen():
                 print('not recieving any data')
             else:
                 print('data:',data)
-prediction_thread = threading.Thread(target=server_program)
-listening_thread = threading.Thread(target=listen)
+prediction_thread = threading.Thread(target=server_program) #utilize GPU
+listening_thread = threading.Thread(target=listen)# utilize CPU
 
 print("TESTING!")
 if __name__ == '__main__':
