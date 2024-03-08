@@ -118,7 +118,7 @@ class Server:
                 print('broadcasting...', client.addr)
                 try:
                     #with client.lock: # Don't allow other threads to receive data while we're sending
-                    client.socket.send(data.encode())
+                    client.socket.sendall(data.encode()) #changed from send to sendall
                 except Exception as e:
                     print("Removing client", client.addr, e)
                     self.clients.remove(client) 
