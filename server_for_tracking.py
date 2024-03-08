@@ -1,18 +1,22 @@
 import socket
-import time
+import time #used to calc FPS
 import threading
 import queue
 import cv2
-import imutils
-from yoloDet import YoloTRT
+import imutils #resizing images
+from yoloDet import YoloTRT #predicting
 import pycuda.driver as cuda
-cuda.init()
+
+#preparing cuda GPU
+cuda.init() 
 device = cuda.Device(0)
 ctx = device.make_context()
+
 host_ip = ''  # Accept connections on any interface
 port = 5800
 backlog = 5
-capture_ready=False
+capture_ready=False #Model won't inference until this value is True which is when camera is ready
+
 model = YoloTRT(library="yolov5/build/libmyplugins.so", engine="yolov5/build/yolov5s.engine", conf=0.5, yolo_ver="v5")
 class Client:
     """Lightweight class to store client socket and lock for thread-safety."""
@@ -58,15 +62,14 @@ class Server:
     def image_processing(self):
         """Do image processing and send data."""
         while True:
-            # TODO: Replace the following line with your image processing code
             if capture_ready:
-                ctx.push()
+                ctx.push() #making context
                 time1=time.time()
                 detections, t = model.Inference(latest_image)
                 time2=time.time()
                 time_taken=time2-time1
                 fps=1/time_taken
-                ctx.pop()
+                ctx.pop() #clearing the context
                 print('fps:',fps)
                 bounding_boxes=[]
                 if len(detections)>0:
