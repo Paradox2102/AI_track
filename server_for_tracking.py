@@ -6,7 +6,7 @@ import cv2
 import imutils #resizing images
 from yoloDet import YoloTRT #predicting
 import pycuda.driver as cuda
-
+key = 0xaa55aa55 #2857740885 as int
 #preparing cuda GPU
 cuda.init() 
 device = cuda.Device(0)
@@ -15,8 +15,6 @@ ctx = device.make_context()
 host_ip = ''  # Accept connections on any interface
 port = 5800
 backlog = 5
-capture_ready=False #Model won't inference until this value is True which is when camera is ready
-
 model = YoloTRT(library="yolov5/build/libmyplugins.so", engine="yolov5/build/yolov5s.engine", conf=0.5, yolo_ver="v5")
 class Client:
     """Lightweight class to store client socket and lock for thread-safety."""
@@ -32,17 +30,30 @@ class Server:
         self.server_socket.bind((host_ip, port))
         self.server_socket.listen(backlog)
         self.video_capture = cv2.VideoCapture(0)
+        self.capture_ready=False
+        self.latest_image=None
+        #self.video_capture.set(cv2.CAP_PROP_FRAME_WIDTH,352)
+        #self.video_capture.set(cv2.CAP_PROP_FRAME_HEIGHT,320)
         print(f"[*] Listening on {host_ip}:{port}")
         self.data_queue = queue.Queue(maxsize=1)  # Only store the latest data
         self.data_available = threading.Condition()  # Condition variable to signal when new data is available
         self.clients=[]
         self.frame_counter=1
+    def send_key_width_height_nbytes_jpg(self):
+        while True:
+            if self.latest_image is not None:
+                latest_image = self.latest_image # locking onto latest image by storing it as variable
+                if latest_image.shape==(320,352,3):
+                    #convert key to 32 bit first
+                    self.send_data(key,352,320,self.latest_image.size,latest_image)  #send as binary. 352 and 320 represent width and height
+                    time.sleep(.1) #sending every 100 milliseconds
     def start(self):
         """Start the server and begin accepting connections."""
         threading.Thread(target=self.accept_connections).start()
         threading.Thread(target=self.capture_images).start()
         threading.Thread(target=self.image_processing).start()
         threading.Thread(target=self.broadcast_data).start()
+        threading.Thread(target=self.send_key_width_height_nbytes_jpg).start()
     def accept_connections(self):
         """Accept incoming connections and spawn a new thread for each client."""
         while True:
@@ -54,44 +65,49 @@ class Server:
             print("CLIENTS:", self.clients)
     def capture_images(self):
         while True:
-            global capture_ready
-            global latest_image
-            capture_ready,latest_image = self.video_capture.read()
-            latest_image  = imutils.resize(latest_image, width=640,height=640)
-            self.frame_counter+=1
+            self.capture_ready,self.latest_image = self.video_capture.read()
+            print('capture ready:',capture_ready)
+            if self.capture_ready:
+                self.latest_image = cv2.resize(self.latest_image,(352,320))
     def image_processing(self):
         """Do image processing and send data."""
         while True:
-            if capture_ready:
-                ctx.push() #making context
-                time1=time.time()
-                detections, t = model.Inference(latest_image)
-                time2=time.time()
-                time_taken=time2-time1
-                fps=1/time_taken
-                ctx.pop() #clearing the context
-                print('fps:',fps)
-                bounding_boxes=[]
-                if len(detections)>0:
-                    for i,v in enumerate(detections):
-                        box=v['box']
-                        bounding_boxes.append(box)
-                bounding_box_str=''
-                #message indicating start
-                bounding_box_str+= f'''\nF {self.frame_counter} 352 320\n'''
+            if self.capture_ready and self.latest_image is not None:
+                if self.latest_image.shape==(320,352,3):
+                    time1=time.time()
+                    ctx.push() #making context
+                    detections, t = model.Inference(self.latest_image)
+                    ctx.pop() #clearing the context
+                    self.frame_counter+=1
+                    time2=time.time()
+                    time_taken=time2-time1
+                    fps=1/time_taken
+                    print('fps:',fps)
+                    for i in detections:
+                        print(i)
+                    bounding_boxes=[i['box'] for i in detections]
+                    #print('bounding_boxes:',bounding_boxes)
+                    bounding_box_str=''
+                    #message indicating start
+                    bounding_box_str+= f'''\nF {self.frame_counter} 352 320\n'''
 
-                #bounding box messages
+                    #bounding box messages
 
-                for index,box in enumerate(bounding_boxes):
-                    x1,y1,x2,y2=box
-                    x1,y1,x2,y2 = int(round(x1)),int(round(y1)),int(round(x2)),int(round(y2))
-                    bounding_box_str+=f'R {x1} {y1} {x2} {y2}\n'
-                bounding_box_str+=f'E\n'
-                data=bounding_box_str
-                print('data:',data)
-                self.send_data(data)
-            else:
-                print('camera not functioning')
+                    for index,box in enumerate(bounding_boxes):
+                        print('box:',box)
+                        x1,y1,x2,y2=box
+                        bounding_box_str+=f'R {x1} {y1} {x2} {y2}\n'
+                    bounding_box_str+=f'E\n'
+                    data=bounding_box_str
+                    print('data:',data)
+                    #print('detections:',detections)
+                    self.send_data(data)
+                else:
+                    #print('camera not functioning')
+                    #print(self.capture_ready)
+                    if self.latest_image is not None:
+                        #print('SHAPE:',self.latest_image.shape)
+                        continue
 
     def send_data(self, data):
         """Send data to all connected clients."""
@@ -124,7 +140,7 @@ class Server:
                     client.socket.sendall(data.encode()) #changed from send to sendall
                 except Exception as e:
                     print("Removing client", client.addr, e)
-                    self.clients.remove(client) 
+                    self.clients.remove(client)
 
 if __name__ == "__main__":
     server = Server()
