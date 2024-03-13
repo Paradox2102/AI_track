@@ -6,7 +6,9 @@ import cv2
 import imutils #resizing images
 from yoloDet import YoloTRT #predicting
 import pycuda.driver as cuda
-key = 0xaa55aa55 #2857740885 as int
+import os
+
+
 #preparing cuda GPU
 cuda.init() 
 device = cuda.Device(0)
@@ -15,6 +17,8 @@ ctx = device.make_context()
 host_ip = ''  # Accept connections on any interface
 port = 5800
 backlog = 5
+capture_ready=False #Model won't inference until this value is True which is when camera is ready
+latest_image=None
 model = YoloTRT(library="yolov5/build/libmyplugins.so", engine="yolov5/build/yolov5s.engine", conf=0.5, yolo_ver="v5")
 class Client:
     """Lightweight class to store client socket and lock for thread-safety."""
@@ -27,18 +31,33 @@ class Server:
     """Server class to accept connections, handle clients, and broadcast data to clients."""
     def __init__(self):
         self.server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        self.server_socket.bind((host_ip, port))
+        try:
+            self.server_socket.bind((host_ip, port))
+        except:
+            #TODO: add exception for address already in use
+            print('address already in use. Killing all python processes, restart this code in order for it to run again')
+            os.system('sudo killall -9 python3')
+
         self.server_socket.listen(backlog)
+
+        #TODO: CAPTURE IN 352x320
         self.video_capture = cv2.VideoCapture(0)
-        self.capture_ready=False
-        self.latest_image=None
         #self.video_capture.set(cv2.CAP_PROP_FRAME_WIDTH,352)
         #self.video_capture.set(cv2.CAP_PROP_FRAME_HEIGHT,320)
+
+        #TODO: MAKE SO DRIVERSTATION CAN ACCESS CAPTURED IMAGES USING KEY
+        #self.key = 0xaa55aa55 #2857740885 as int
+
+        self.capture_ready=False
+        self.latest_image=None
+        self.latest_image_time=None
         print(f"[*] Listening on {host_ip}:{port}")
         self.data_queue = queue.Queue(maxsize=1)  # Only store the latest data
         self.data_available = threading.Condition()  # Condition variable to signal when new data is available
         self.clients=[]
         self.frame_counter=1
+
+    #TODO: WORK ON THIS FUNCTION LATER
     def send_key_width_height_nbytes_jpg(self):
         while True:
             if self.latest_image is not None:
@@ -47,13 +66,15 @@ class Server:
                     #convert key to 32 bit first
                     self.send_data(key,352,320,self.latest_image.size,latest_image)  #send as binary. 352 and 320 represent width and height
                     time.sleep(.1) #sending every 100 milliseconds
+
+
     def start(self):
         """Start the server and begin accepting connections."""
         threading.Thread(target=self.accept_connections).start()
         threading.Thread(target=self.capture_images).start()
         threading.Thread(target=self.image_processing).start()
         threading.Thread(target=self.broadcast_data).start()
-        threading.Thread(target=self.send_key_width_height_nbytes_jpg).start()
+        #threading.Thread(target=self.send_key_width_height_nbytes_jpg).start()
     def accept_connections(self):
         """Accept incoming connections and spawn a new thread for each client."""
         while True:
@@ -66,17 +87,31 @@ class Server:
     def capture_images(self):
         while True:
             self.capture_ready,self.latest_image = self.video_capture.read()
-            print('capture ready:',capture_ready)
+            self.latest_image_time=time.time()
+            #print('capture ready:',self.capture_ready)
             if self.capture_ready:
                 self.latest_image = cv2.resize(self.latest_image,(352,320))
+            else:
+                print('not capture ready. FIX CAMERA!')
+                self.video_capture = cv2.VideoCapture(0)
     def image_processing(self):
         """Do image processing and send data."""
         while True:
             if self.capture_ready and self.latest_image is not None:
-                if self.latest_image.shape==(320,352,3):
+                if self.latest_image.shape==(320,352,3) and (time.time()-self.latest_image_time)<.08:
                     time1=time.time()
                     ctx.push() #making context
                     detections, t = model.Inference(self.latest_image)
+
+                    #displaying image is display is avalible
+                    if 'DISPLAY' in os.environ:
+                        if self.latest_image.shape==(320,352,3):
+                            cv2.imshow("Output", self.latest_image)
+                            key = cv2.waitKey(1)
+                            if key == ord('q'):
+                                break
+
+
                     ctx.pop() #clearing the context
                     self.frame_counter+=1
                     time2=time.time()
@@ -102,12 +137,12 @@ class Server:
                     print('data:',data)
                     #print('detections:',detections)
                     self.send_data(data)
-                else:
-                    #print('camera not functioning')
+                elif not (time.time()-self.latest_image_time)<.08:
+                    print('IMAGES TOO OLD, camera not functioning')
                     #print(self.capture_ready)
-                    if self.latest_image is not None:
+                    #if self.latest_image is not None:
                         #print('SHAPE:',self.latest_image.shape)
-                        continue
+                        #continue
 
     def send_data(self, data):
         """Send data to all connected clients."""
