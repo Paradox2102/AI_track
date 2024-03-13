@@ -8,7 +8,6 @@ from yoloDet import YoloTRT #predicting
 import pycuda.driver as cuda
 import os
 
-
 #preparing cuda GPU
 cuda.init() 
 device = cuda.Device(0)
@@ -20,6 +19,7 @@ backlog = 5
 capture_ready=False #Model won't inference until this value is True which is when camera is ready
 latest_image=None
 model = YoloTRT(library="yolov5/build/libmyplugins.so", engine="yolov5/build/yolov5s.engine", conf=0.5, yolo_ver="v5")
+
 class Client:
     """Lightweight class to store client socket and lock for thread-safety."""
     def __init__(self, socket, addr):
@@ -45,7 +45,7 @@ class Server:
         #self.video_capture.set(cv2.CAP_PROP_FRAME_WIDTH,352)
         #self.video_capture.set(cv2.CAP_PROP_FRAME_HEIGHT,320)
 
-        #TODO: MAKE SO DRIVERSTATION CAN ACCESS CAPTURED IMAGES USING KEY
+        #TODO: MAKE IT SO DRIVERSTATION CAN ACCESS CAPTURED IMAGES USING KEY
         #self.key = 0xaa55aa55 #2857740885 as int
 
         self.capture_ready=False
@@ -67,7 +67,7 @@ class Server:
                     self.send_data(key,352,320,self.latest_image.size,latest_image)  #send as binary. 352 and 320 represent width and height
                     time.sleep(.1) #sending every 100 milliseconds
 
-
+    
     def start(self):
         """Start the server and begin accepting connections."""
         threading.Thread(target=self.accept_connections).start()
