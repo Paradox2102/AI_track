@@ -1,1 +1,1 @@
-This is the python socket code for a server combined with a interface that runs the tensorrt (optimized for GPU) yolov5 nano detection model. The server sends bounding boxes to the robo-rio.
+This is the python socket code for a server combined with a interface that runs the tensorrt engine (optimized for GPU) yolov5 nano detection model. The mode was trained on more than 19000 images in order to produce the wanted results. The server sends bounding boxes to the robo-rio.
