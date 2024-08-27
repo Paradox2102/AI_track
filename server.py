@@ -163,11 +163,10 @@ class Server:
                 self.video_capture = cv2.VideoCapture(0)
 
     def image_processing(self):
-        tvecs_and_rvecs = []
         """Do image processing and send data."""
         while True: 
             img = self.latest_image
-           
+            tvecs_and_rvecs = []
             latest_image_time=self.latest_image_time
             if self.capture_ready and img is not None:
                 if img.shape[1]==image_width and (time.time()-latest_image_time)<1:
@@ -177,8 +176,8 @@ class Server:
                     detections, t = model.Inference(clone_img)
                     if detections:
                         for bounding_box in detections:
-                            _, tvec = solve_pnp(*bounding_box['box'])
-                            tvecs_and_rvecs.append([_,tvec])
+                            rvec, tvec = solve_pnp(*bounding_box['box'])
+                            tvecs_and_rvecs.append([rvec,tvec])
                             print('tvec:',tvec)
                             font = cv2.FONT_HERSHEY_SIMPLEX
                             for i, value in enumerate(tvec):                     
