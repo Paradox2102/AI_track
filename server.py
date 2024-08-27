@@ -10,6 +10,8 @@ import os
 import struct
 from datetime import datetime
 import numpy as np
+
+
 #preparing cuda GPU
 cuda.init() 
 image_width = 640
@@ -17,7 +19,6 @@ image_height = 400
 device = cuda.Device(0)
 ctx = device.make_context()
 radius = 7
-tvecs_and_rvecs = []
 camera_matrix = np.array(((6.2874914053271243e+02, 0.,  3.1950000000000000e+02,),(0.,
      6.2874914053271243e+02, 1.9950000000000000e+02), (0., 0., 1.)))
 distortion_coefficients = np.array((-1.5434763501469506e-01, 7.2106771708519934e-01, 0., 0.,
@@ -117,12 +118,8 @@ class Server:
         self.rio_service = Service(port, self.handle_client).start()
         self.ds_service = Service(driver_station_port, self.handle_client).start()
 
-        #TODO: CAPTURE IN 352x320
         self.video_capture = cv2.VideoCapture(0)
-        #self.video_capture.set(cv2.CAP_PROP_FRAME_WIDTH,352)
-        #self.video_capture.set(cv2.CAP_PROP_FRAME_HEIGHT,320)
 
-        #TODO: MAKE SO DRIVERSTATION CAN ACCESS CAPTURED IMAGES USING KEY
         self.key = 0xaa55aa55 #2857740885 as int
         self.latest_predicted_img=None
         self.capture_ready=False
@@ -151,12 +148,10 @@ class Server:
         threading.Thread(target=self.capture_images).start()
         threading.Thread(target=self.image_processing).start()
         threading.Thread(target=self.send_images_thread).start()
-        #threading.Thread(target=self.send_key_width_height_nbytes_jpg).start()
 
     def capture_images(self):
         while True:
             self.capture_ready,self.latest_image = self.video_capture.read()
-            #print('capture ready:',self.capture_ready)
             if self.capture_ready:
                 self.latest_image = imutils.resize(self.latest_image,width=image_width)
                 global image_height
@@ -168,9 +163,9 @@ class Server:
                 self.video_capture = cv2.VideoCapture(0)
 
     def image_processing(self):
+        tvecs_and_rvecs = []
         """Do image processing and send data."""
-        while True: #/Users/milesnorman/robotics_stuff/Robotics_server_socket/server_original.py
-            #/Users/milesnorman/server_original.py
+        while True: 
             img = self.latest_image
            
             latest_image_time=self.latest_image_time
@@ -229,10 +224,6 @@ class Server:
                     self.rio_service.send_data(data)
                 elif not (time.time()-latest_image_time)<1:
                     print('IMAGES TOO OLD, camera not functioning')
-                    #print(self.capture_ready)
-                    #if self.latest_image is not None:
-                        #print('SHAPE:',self.latest_image.shape)
-                        #continue
 
     def handle_client(self, client):
         """Handle data received on a client connection."""
