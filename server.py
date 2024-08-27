@@ -12,14 +12,18 @@ from datetime import datetime
 import numpy as np
 #preparing cuda GPU
 cuda.init() 
+image_width = 640
+image_height = 400
 device = cuda.Device(0)
 ctx = device.make_context()
 radius = 7
-camera_matrix = np.array(((1.6607249210593077e+03, 0., 1.7550000000000000e+02,),(0.,
-    1.6607249210593077e+03, 1.5950000000000000e+02), (0., 0., 1.)))
-distortion_coefficients = np.array((6.7866256446141759e-01, 9.9254524716423896e+02, 0., 0.,
-    -1.1908325361486105e+05))
-object_points = np.array(((0,0,radius),(-radius,0,0),(radius,0,0),(0,0,-radius))) 
+tvecs_and_rvecs = []
+camera_matrix = np.array(((6.2874914053271243e+02, 0.,  3.1950000000000000e+02,),(0.,
+     6.2874914053271243e+02, 1.9950000000000000e+02), (0., 0., 1.)))
+distortion_coefficients = np.array((-1.5434763501469506e-01, 7.2106771708519934e-01, 0., 0.,
+    -9.9172780117959070e-01))
+object_points = np.expand_dims(np.array(((0,0,radius),(-radius,0,0),(radius,0,0),(0,0,-radius))),axis=2).astype('float32')
+print('object points shape:',np.shape(object_points))
 
 host_ip = ''  # Accept connections on any interface
 port = 5800
@@ -30,8 +34,9 @@ capture_ready=False #Model won't inference until this value is True which is whe
 latest_image=None
 model = YoloTRT(library="yolov5/build/libmyplugins.so", engine="yolov5/build/yolov5s.engine", conf=0.5, yolo_ver="v5")
 def solve_pnp(x1,y1,x2,y2):
-   image_points = np.array([(np.mean((x1,x2)),y1),(x1,np.mean((y1,y2))),(x2,np.mean((y1,y2))),(np.mean((x1,x2)),y2)])
-   rvec,tvec = cv2.solvePnP(object_points,image_points,camera_matrix,distortion_coefficients)
+   image_points = np.expand_dims(np.array([(np.mean((x1,x2)),y1),(x1,np.mean((y1,y2))),(x2,np.mean((y1,y2))),(np.mean((x1,x2)),y2)]),axis=2).astype('float32')
+   print('image points shape:',np.shape(image_points))
+   rtval,rvec,tvec = cv2.solvePnP(object_points,image_points,camera_matrix,distortion_coefficients)
    return [rvec,tvec]
  
 class Client:
@@ -124,8 +129,7 @@ class Server:
         self.latest_image=None
         self.latest_image_time=time.time()
         self.frame_counter=1
-    
-    def send_image(self,width:int,height:int,img:bytes):
+    def send_image(self,key,width:int,height:int,img:bytes):
         #rint(width,height,len(img))
         #encode as a 4-byte integers in network byte order
         img_bytes=cv2.imencode('.jpg',img)[1].tobytes()
@@ -137,9 +141,9 @@ class Server:
     def send_images_thread(self):
         while True:
             if self.latest_predicted_img is not None:
-                #self.send_image(self.key,352,320,self.latest_predicted_img)
+                self.send_image(self.key,image_width,image_height,self.latest_predicted_img)
                 time.sleep(.1) # send every 100 milliseconds
-                self.send_image(352,320,self.latest_predicted_img)
+                #self.send_image(self.key,image_width,image_height,self.latest_predicted_img)
 
 
     def start(self):
@@ -154,7 +158,10 @@ class Server:
             self.capture_ready,self.latest_image = self.video_capture.read()
             #print('capture ready:',self.capture_ready)
             if self.capture_ready:
-                self.latest_image = cv2.resize(self.latest_image,(352,320))
+                self.latest_image = imutils.resize(self.latest_image,width=image_width)
+                global image_height
+                image_height = self.latest_image.shape[0]
+                print('image height:',image_height)
                 self.latest_image_time=time.time()
             else:
                 print('not capture ready. FIX CAMERA!')
@@ -165,18 +172,27 @@ class Server:
         while True: #/Users/milesnorman/robotics_stuff/Robotics_server_socket/server_original.py
             #/Users/milesnorman/server_original.py
             img = self.latest_image
+           
             latest_image_time=self.latest_image_time
             if self.capture_ready and img is not None:
-                if img.shape==(320,352,3) and (time.time()-latest_image_time)<1:
+                if img.shape[1]==image_width and (time.time()-latest_image_time)<1:
                     time1=time.time()
                     clone_img = img
                     ctx.push() #making context
                     detections, t = model.Inference(clone_img)
+                    if detections:
+                        for bounding_box in detections:
+                            _, tvec = solve_pnp(*bounding_box['box'])
+                            tvecs_and_rvecs.append([_,tvec])
+                            print('tvec:',tvec)
+                            font = cv2.FONT_HERSHEY_SIMPLEX
+                            for i, value in enumerate(tvec):                     
+                                cv2.putText(clone_img,str(value), (50,20+i*20),font,1,(0,50,0))
                     self.latest_predicted_img=clone_img
                     #displaying image is display is avalible
                     if 'DISPLAY' in os.environ:
-                        # cv2.imshow("Output", clone_img) with bounding boxes
-                        cv2.imshow("Output", img) #without bounding boxes
+                        # cv2.imshow("Output", img) without bounding boxes
+                        cv2.imshow("Output", clone_img) #with bounding boxes
                         key = cv2.waitKey(1)
                         if key == ord('s'): #press s to save latest image
                             timestr = datetime.utcnow().isoformat(timespec='milliseconds')
@@ -194,17 +210,19 @@ class Server:
                     #print('bounding_boxes:',bounding_boxes)
                     bounding_box_str=''
                     #message indicating start
-                    bounding_box_str+= f'''\nF {self.frame_counter} 352 320\n'''
+                    bounding_box_str+= f'''\nF {self.frame_counter} {image_width} {image_height}\n'''
 
                     #bounding box messages
 
                     for index,box in enumerate(bounding_boxes):
                         #print('box:',box)
                         x1,y1,x2,y2=box
-                        print('solving..')
-                        print('PNP RESULTS:',solve_pnp(x1,y1,x2,y2))
-                        bounding_box_str+=f'R {x1} {y1} {x2} {y2}\n'
+                        if detections:
+                            rvec,tvec = tvecs_and_rvecs[index]
+                            tx,ty,tz = tvec[0],tvec[1],tvec[2]
+                            bounding_box_str+=f'R {x1} {y1} {x2} {y2} {tx[0]} {ty[0]} {tz[0]}\n'
                     bounding_box_str+=f'E\n'
+                    print(bounding_box_str)
                     data=bounding_box_str
                     #print('data:',data)
                     #print('detections:',detections)
@@ -222,7 +240,7 @@ class Server:
             with client.lock: # Don't allow other threads to send data while we're receiving
                 data = client.socket.recv(1024)
                 if not data:
-                    #print('not receiving any data')
+                         #print('not receiving any data')
                     pass
                 else:
                     print('data:',data, client.addr)
