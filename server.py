@@ -38,7 +38,10 @@ def solve_pnp(x1,y1,x2,y2):
    image_points = np.expand_dims(np.array([(np.mean((x1,x2)),y1),(x1,np.mean((y1,y2))),(x2,np.mean((y1,y2))),(np.mean((x1,x2)),y2)]),axis=2).astype('float32')
    print('image points shape:',np.shape(image_points))
    rtval,rvec,tvec = cv2.solvePnP(object_points,image_points,camera_matrix,distortion_coefficients)
-   return [rvec,tvec]
+   if(rtval):
+        return [rvec,tvec]
+   else:
+        return False
  
 class Client:
     """Lightweight class to store client socket and lock for thread-safety."""
@@ -177,12 +180,15 @@ class Server:
                     detections, t = model.Inference(clone_img)
                     if detections:
                         for bounding_box in detections:
-                            rvec, tvec = solve_pnp(*bounding_box['box'])
-                            tvecs_and_rvecs.append([rvec,tvec])
-                            print('tvec:',tvec)
-                            font = cv2.FONT_HERSHEY_SIMPLEX
-                            for i, value in enumerate(tvec):                     
-                                cv2.putText(clone_img,str(value), (50,20+i*20),font,1,(0,50,0))
+                            bounding_box_info =  solve_pnp(*bounding_box['box'])
+                            if bounding_box_info: #checking if solvepnp failed
+                                 rvec, tvec = solve_pnp(*bounding_box['box'])
+                             
+                                 tvecs_and_rvecs.append([rvec,tvec])
+                                 print('tvec:',tvec)
+                                 font = cv2.FONT_HERSHEY_SIMPLEX
+                                 for i, value in enumerate(tvec):                     
+                                     cv2.putText(clone_img,str(value), (50,20+i*20),font,1,(0,50,0))
                     self.latest_predicted_img=clone_img
                     #displaying image is display is avalible
                     if 'DISPLAY' in os.environ:
@@ -212,7 +218,7 @@ class Server:
                     for index,box in enumerate(bounding_boxes):
                         #print('box:',box)
                         x1,y1,x2,y2=box
-                        if detections:
+                        if detections and x1>0 and y1>0 and x2<(image_width-1) and y2<(image_height-1): #checking if bounding box is outside of image, and if there are detections in the first place
                             rvec,tvec = tvecs_and_rvecs[index]
                             tx,ty,tz = tvec[0],tvec[1],tvec[2]
                             bounding_box_str+=f'R {x1} {y1} {x2} {y2} {tx[0]} {ty[0]} {tz[0]}\n'
