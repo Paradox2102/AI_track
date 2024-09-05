@@ -159,6 +159,7 @@ class Server:
                 print('image height:',image_height)
                 self.latest_image_time=time.time()
             else:
+                time.sleep(.1)
                 print('not capture ready. FIX CAMERA!')
                 self.video_capture = cv2.VideoCapture(0)
 
