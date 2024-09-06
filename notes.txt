@@ -1,0 +1,3 @@
+scp C:\Users\paradox\Desktop\FRC\AI_track\server.py  paradox@10.21.2.10:JetsonYolov5/server_original.py
+sudo systemctl restart ai
+sudo systemctl status ai
