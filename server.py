@@ -182,7 +182,7 @@ class Server:
                         for bounding_box in detections:
                             bounding_box_info =  solve_pnp(*bounding_box['box'])
                             if bounding_box_info: #checking if solvepnp failed
-                                 rvec, tvec = solve_pnp(*bounding_box['box'])
+                                 rvec, tvec = bounding_box_info
                              
                                  tvecs_and_rvecs.append([rvec,tvec])
                                  print('tvec:',tvec)
