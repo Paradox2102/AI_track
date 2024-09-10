@@ -1,3 +1,11 @@
+# Copy VSCode file onto Jetson
 scp C:\Users\paradox\Desktop\FRC\AI_track\server.py  paradox@10.21.2.10:JetsonYolov5/server_original.py
+
+# Restart AI Camera service on Jetson
 sudo systemctl restart ai
+
+# Check status and get log
 sudo systemctl status ai
+
+# Reboot Linux machine
+sudo shutdown -r now
