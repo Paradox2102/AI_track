@@ -175,25 +175,34 @@ class Server:
             if self.capture_ready and img is not None:
                 if img.shape[1]==image_width and (time.time()-latest_image_time)<1:
                     time1=time.time()
-                    clone_img = img
+                    clone_img = img.copy()
+                    image_with_boxes = img.copy()
                     ctx.push() #making context
-                    detections, t = model.Inference(clone_img)
+                    detections, t = model.Inference(clone_img) #clone_img is the image with the bad bounding boxes drawn on it
+                    
+                    bounding_boxes=[i['box'] for i in detections]
+                    for box in bounding_boxes:
+                        image_with_boxes = cv2.rectangle(image_with_boxes, box[:2], box[2:], (0,0,255), 1)
+                    # x1,y1,x2,y2=box
+                      #  if detections and x1>0 and y1>0 and x2<(image_width-1) and y2<(image_height-1)
+                    bounding_boxes = [i for i in bounding_boxes if i[0]>0 and i[1]>0 and i[2]<(image_width-1) and i[3]<(image_height-1)]
                     if detections:
-                        for bounding_box in detections:
-                            bounding_box_info =  solve_pnp(*bounding_box['box'])
+                        for box in bounding_boxes:
+                            
+                            bounding_box_info =  solve_pnp(*box)
                             if bounding_box_info: #checking if solvepnp failed
                                  rvec, tvec = bounding_box_info
                              
                                  tvecs_and_rvecs.append([rvec,tvec])
                                  print('tvec:',tvec)
-                                 font = cv2.FONT_HERSHEY_SIMPLEX
-                                 for i, value in enumerate(tvec):                     
-                                     cv2.putText(clone_img,str(value), (50,20+i*20),font,1,(0,50,0))
-                    self.latest_predicted_img=clone_img
+                                #  font = cv2.FONT_HERSHEY_SIMPLEX
+                                #  for i, value in enumerate(tvec):                     
+                                     #cv2.putText(image_with_boxes,str(value), (50,20+i*20),font,1,(0,50,0))
+                    self.latest_predicted_img=image_with_boxes
                     #displaying image is display is avalible
                     if 'DISPLAY' in os.environ:
                         # cv2.imshow("Output", img) without bounding boxes
-                        cv2.imshow("Output", clone_img) #with bounding boxes
+                        cv2.imshow("Output", image_with_boxes) #with bounding boxes
                         key = cv2.waitKey(1)
                         if key == ord('s'): #press s to save latest image
                             timestr = datetime.utcnow().isoformat(timespec='milliseconds')
@@ -207,7 +216,7 @@ class Server:
                     #print('fps:',fps)
                     for i in detections:
                         print(i)
-                    bounding_boxes=[i['box'] for i in detections]
+
                     #print('bounding_boxes:',bounding_boxes)
                     bounding_box_str=''
                     #message indicating start
