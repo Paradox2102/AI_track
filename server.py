@@ -11,13 +11,15 @@ import struct
 from datetime import datetime
 import numpy as np
 
+cuda.init() #making context
+device = cuda.Device(0)
 
 #preparing cuda GPU
-cuda.init() 
+# cuda.init() 
 image_width = 640
 image_height = 400
-device = cuda.Device(0)
-ctx = device.make_context()
+# device = cuda.Device(0)
+# ctx = device.make_context()
 radius = 7
 camera_matrix = np.array(((6.2874914053271243e+02, 0.,  3.1950000000000000e+02,),(0.,
      6.2874914053271243e+02, 1.9950000000000000e+02), (0., 0., 1.)))
@@ -177,8 +179,13 @@ class Server:
                     time1=time.time()
                     clone_img = img.copy()
                     image_with_boxes = img.copy()
-                    ctx.push() #making context
+    
+                    ctx = device.make_context()
+                    ctx.push()
+                    
                     detections, t = model.Inference(clone_img) #clone_img is the image with the bad bounding boxes drawn on it
+                    ctx.pop()
+                    # ctx.allocate()
                     
                     bounding_boxes=[i['box'] for i in detections]
                     for box in bounding_boxes:
@@ -208,7 +215,7 @@ class Server:
                             timestr = datetime.utcnow().isoformat(timespec='milliseconds')
                             save_path = f'/home/paradox/JetsonYolov5/{timestr}.png'
                             cv2.imwrite(save_path,img)
-                    ctx.pop() #clearing the context
+                    # ctx.pop() #clearing the context
                     self.frame_counter+=1
                     time2=time.time()
                     time_taken=time2-time1
