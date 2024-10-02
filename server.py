@@ -1,12 +1,18 @@
+import logging
+import os
+logging.disable(logging.WARNING)
+os.environ["TF_CPP_MIN_LOG_LEVEL"] = "3"
+
 import socket
 import time #used to calc FPS
 import threading
 import queue
 import cv2
 import imutils #resizing images
+
 from yoloDet import YoloTRT #predicting
 import pycuda.driver as cuda
-import os
+
 import struct
 from datetime import datetime
 import numpy as np
@@ -51,6 +57,8 @@ class Client:
         self.socket = socket
         self.addr = addr
         self.lock = threading.Lock()  # Lock to ensure thread-safety of send and recv calls
+    def __repr__(self) -> str:
+        return f"{self.addr}"
 
 
 class Service:
@@ -75,8 +83,8 @@ class Service:
         self.data_available = threading.Condition()  # Condition variable to signal when new data is available
 
     def start(self):
-        threading.Thread(target=self.accept_connections).start()
-        threading.Thread(target=self.broadcast_data).start()
+        threading.Thread(target=self.accept_connections,daemon=True).start()
+        threading.Thread(target=self.broadcast_data,daemon=True).start()
         return self
 
     def accept_connections(self):
@@ -87,7 +95,7 @@ class Service:
             client = Client(client_socket, addr)
             self.clients.append(client)
             print("CLIENTS:", self.clients)
-            threading.Thread(target=self.handler, args=(client,)).start()
+            threading.Thread(target=self.handler, args=(client,),daemon=True).start()
 
     def send_data(self, data):
         """Send data to all connected clients."""
@@ -141,22 +149,32 @@ class Server:
         self.ds_service.send_data(data)
 
     def send_images_thread(self):
-        while True:
+            print("trying to send image")
             if self.latest_predicted_img is not None:
                 self.send_image(self.key,image_width,image_height,self.latest_predicted_img)
-                time.sleep(.1) # send every 100 milliseconds
+                # time.sleep(.1) # send every 100 milliseconds
                 #self.send_image(self.key,image_width,image_height,self.latest_predicted_img)
+                print("sent image")
+            
+            else:
+                print("no latest image")
 
 
     def start(self):
         """Start the server and begin accepting connections."""
-        threading.Thread(target=self.capture_images).start()
-        threading.Thread(target=self.image_processing).start()
-        threading.Thread(target=self.send_images_thread).start()
+        # threading.Thread(target=self.capture_images).start()
+        # threading.Thread(target=self.image_processing).start()
+        # threading.Thread(target=self.send_images_thread).start()
+        
+        t = threading.Thread(target=self.worker,daemon=True)
+        t.start()
+        return t
 
     def capture_images(self):
-        while True:
+        #while True:
+            print("waiting for image...")
             self.capture_ready,self.latest_image = self.video_capture.read()
+            print("got image",self.capture_ready)
             if self.capture_ready:
                 self.latest_image = imutils.resize(self.latest_image,width=image_width)
                 global image_height
@@ -167,41 +185,54 @@ class Server:
                 time.sleep(.1)
                 print('not capture ready. FIX CAMERA!')
                 self.video_capture = cv2.VideoCapture(0)
+    def worker(self):
+        print("started worker")
+        while True:
+            self.capture_images()
+            self.image_processing()
+            self.send_images_thread()
 
     def image_processing(self):
-        """Do image processing and send data."""
-        while True: 
+            """Do image processing and send data."""
+    
             img = self.latest_image
             tvecs_and_rvecs = []
             latest_image_time=self.latest_image_time
+
             if self.capture_ready and img is not None:
                 if img.shape[1]==image_width and (time.time()-latest_image_time)<1:
                     time1=time.time()
                     clone_img = img.copy()
                     image_with_boxes = img.copy()
-    
-                    ctx = device.make_context()
-                    ctx.push()
-                    
+                    # print("about to push context")
+                    ctx.push() #making context
+                    # print("pushed context")
                     detections, t = model.Inference(clone_img) #clone_img is the image with the bad bounding boxes drawn on it
-                    ctx.pop()
-                    # ctx.allocate()
-                    
+                    print("detections and t:",detections,t)
+                    # print("about to pop context")
+                    ctx.pop() #clearing the context
+                    # print("popped context")
                     bounding_boxes=[i['box'] for i in detections]
+                    bounding_boxes = [i for i in bounding_boxes if i[0]>0 and i[1]>0 and i[2]<(image_width-1) and i[3]<(image_height-1)]
                     for box in bounding_boxes:
-                        image_with_boxes = cv2.rectangle(image_with_boxes, box[:2], box[2:], (0,0,255), 1)
+                        # print(image_with_boxes,box[:2],box[2:])
+                        box = [int(i) for i in box]
+                        # print("box:",box)
+                        
+                        image_with_boxes = cv2.rectangle(image_with_boxes, tuple(box[:2]), tuple(box[2:]), (0,0,255), 1)
                     # x1,y1,x2,y2=box
                       #  if detections and x1>0 and y1>0 and x2<(image_width-1) and y2<(image_height-1)
-                    bounding_boxes = [i for i in bounding_boxes if i[0]>0 and i[1]>0 and i[2]<(image_width-1) and i[3]<(image_height-1)]
+                   
+                   
                     if detections:
                         for box in bounding_boxes:
                             
                             bounding_box_info =  solve_pnp(*box)
                             if bounding_box_info: #checking if solvepnp failed
                                  rvec, tvec = bounding_box_info
-                             
+
                                  tvecs_and_rvecs.append([rvec,tvec])
-                                 print('tvec:',tvec)
+                                #  print('tvec:',tvec)
                                 #  font = cv2.FONT_HERSHEY_SIMPLEX
                                 #  for i, value in enumerate(tvec):                     
                                      #cv2.putText(image_with_boxes,str(value), (50,20+i*20),font,1,(0,50,0))
@@ -215,14 +246,14 @@ class Server:
                             timestr = datetime.utcnow().isoformat(timespec='milliseconds')
                             save_path = f'/home/paradox/JetsonYolov5/{timestr}.png'
                             cv2.imwrite(save_path,img)
-                    # ctx.pop() #clearing the context
+                    
                     self.frame_counter+=1
                     time2=time.time()
                     time_taken=time2-time1
                     fps=1/time_taken
-                    #print('fps:',fps)
-                    for i in detections:
-                        print(i)
+                    print('fps:',fps)
+                    # for i in detections:
+                    #     print(i)
 
                     #print('bounding_boxes:',bounding_boxes)
                     bounding_box_str=''
@@ -261,4 +292,5 @@ class Server:
 
 if __name__ == "__main__":
     server = Server()
-    server.start()
+    t = server.start()
+    t.join()
