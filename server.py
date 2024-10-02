@@ -150,7 +150,7 @@ class Server:
             print("trying to send image")
             if self.latest_predicted_img is not None:
                 self.send_image(self.key,image_width,image_height,self.latest_predicted_img)
-                time.sleep(.1) # send every 100 milliseconds
+                # time.sleep(.1) # send every 100 milliseconds
                 #self.send_image(self.key,image_width,image_height,self.latest_predicted_img)
                 print("sent image")
             
@@ -171,11 +171,7 @@ class Server:
     def capture_images(self):
         #while True:
             print("waiting for image...")
-            try:
-                self.capture_ready,self.latest_image = self.video_capture.read()
-            except cv2.error as e:
-                print(f"CV2 EXCEPTION: {str(e)}")
-                self.capture_ready = False
+            self.capture_ready,self.latest_image = self.video_capture.read()
             print("got image",self.capture_ready)
             if self.capture_ready:
                 self.latest_image = imutils.resize(self.latest_image,width=image_width)
@@ -206,20 +202,20 @@ class Server:
                     time1=time.time()
                     clone_img = img.copy()
                     image_with_boxes = img.copy()
-                    print("about to push context")
+                    # print("about to push context")
                     ctx.push() #making context
-                    print("pushed context")
+                    # print("pushed context")
                     detections, t = model.Inference(clone_img) #clone_img is the image with the bad bounding boxes drawn on it
                     print("detections and t:",detections,t)
-                    print("about to pop context")
+                    # print("about to pop context")
                     ctx.pop() #clearing the context
-                    print("popped context")
+                    # print("popped context")
                     bounding_boxes=[i['box'] for i in detections]
                     bounding_boxes = [i for i in bounding_boxes if i[0]>0 and i[1]>0 and i[2]<(image_width-1) and i[3]<(image_height-1)]
                     for box in bounding_boxes:
-                        print(image_with_boxes,box[:2],box[2:])
+                        # print(image_with_boxes,box[:2],box[2:])
                         box = [int(i) for i in box]
-                        print("box:",box)
+                        # print("box:",box)
                         
                         image_with_boxes = cv2.rectangle(image_with_boxes, tuple(box[:2]), tuple(box[2:]), (0,0,255), 1)
                     # x1,y1,x2,y2=box
@@ -234,7 +230,7 @@ class Server:
                                  rvec, tvec = bounding_box_info
 
                                  tvecs_and_rvecs.append([rvec,tvec])
-                                 print('tvec:',tvec)
+                                #  print('tvec:',tvec)
                                 #  font = cv2.FONT_HERSHEY_SIMPLEX
                                 #  for i, value in enumerate(tvec):                     
                                      #cv2.putText(image_with_boxes,str(value), (50,20+i*20),font,1,(0,50,0))
@@ -253,9 +249,9 @@ class Server:
                     time2=time.time()
                     time_taken=time2-time1
                     fps=1/time_taken
-                    #print('fps:',fps)
-                    for i in detections:
-                        print(i)
+                    print('fps:',fps)
+                    # for i in detections:
+                    #     print(i)
 
                     #print('bounding_boxes:',bounding_boxes)
                     bounding_box_str=''
