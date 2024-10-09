@@ -10,15 +10,16 @@ import queue
 import cv2
 import imutils #resizing images
 
-from yoloDet import YoloTRT #predicting
-import pycuda.driver as cuda
+# from yoloDet import YoloTRT #predicting
+# import pycuda.driver as cuda
+# import pycuda.autoinit
 
 import struct
 from datetime import datetime
 import numpy as np
 
-cuda.init() #making context
-device = cuda.Device(0)
+# cuda.init() #making context
+# device = cuda.Device(0)
 
 #preparing cuda GPU
 # cuda.init() 
@@ -26,6 +27,7 @@ image_width = 640
 image_height = 400
 # device = cuda.Device(0)
 # ctx = device.make_context()
+# ctx.push()
 radius = 7
 camera_matrix = np.array(((6.2874914053271243e+02, 0.,  3.1950000000000000e+02,),(0.,
      6.2874914053271243e+02, 1.9950000000000000e+02), (0., 0., 1.)))
@@ -41,7 +43,7 @@ driver_station_port=5801
 backlog = 5
 capture_ready=False #Model won't inference until this value is True which is when camera is ready
 latest_image=None
-model = YoloTRT(library="yolov5/build/libmyplugins.so", engine="yolov5/build/yolov5s.engine", conf=0.5, yolo_ver="v5")
+# model = YoloTRT(library="yolov5/build/libmyplugins.so", engine="yolov5/build/yolov5s.engine", conf=0.5, yolo_ver="v5")
 def solve_pnp(x1,y1,x2,y2):
    image_points = np.expand_dims(np.array([(np.mean((x1,x2)),y1),(x1,np.mean((y1,y2))),(x2,np.mean((y1,y2))),(np.mean((x1,x2)),y2)]),axis=2).astype('float32')
    print('image points shape:',np.shape(image_points))
@@ -187,6 +189,11 @@ class Server:
                 self.video_capture = cv2.VideoCapture(0)
     def worker(self):
         print("started worker")
+        # ctx.push()
+        # ctx = device.make_context()
+        from yoloDet import YoloTRT #predicting
+        global model
+        model = YoloTRT(library="yolov5/build/libmyplugins.so", engine="yolov5/build/yolov5s.engine", conf=0.5, yolo_ver="v5")
         while True:
             self.capture_images()
             self.image_processing()
@@ -205,21 +212,25 @@ class Server:
                     clone_img = img.copy()
                     image_with_boxes = img.copy()
                     # print("about to push context")
-                    ctx.push() #making context
+                    starttimeInference = time.time()
+                    # ctx.push() #making context
                     # print("pushed context")
                     detections, t = model.Inference(clone_img) #clone_img is the image with the bad bounding boxes drawn on it
                     print("detections and t:",detections,t)
                     # print("about to pop context")
-                    ctx.pop() #clearing the context
+                    # ctx.pop() #clearing the context
+                    endTimeInference = time.time()
+                    print("Time to inference:",endTimeInference-starttimeInference)
                     # print("popped context")
+                    image_border_filter = 10 #the number of pixels the note has to be inside of the camera's view in order to be seen
                     bounding_boxes=[i['box'] for i in detections]
-                    bounding_boxes = [i for i in bounding_boxes if i[0]>0 and i[1]>0 and i[2]<(image_width-1) and i[3]<(image_height-1)]
+                    bounding_boxes = [i for i in bounding_boxes if i[0]>0+image_border_filter and i[1]>0+image_border_filter and i[2]<(image_width-image_border_filter) and i[3]<(image_height-image_border_filter)]
                     for box in bounding_boxes:
                         # print(image_with_boxes,box[:2],box[2:])
                         box = [int(i) for i in box]
                         # print("box:",box)
                         
-                        image_with_boxes = cv2.rectangle(image_with_boxes, tuple(box[:2]), tuple(box[2:]), (0,0,255), 1)
+                        image_with_boxes = cv2.rectangle(image_with_boxes, tuple(box[:2]), tuple(box[2:]), (255,255,0), 8)
                     # x1,y1,x2,y2=box
                       #  if detections and x1>0 and y1>0 and x2<(image_width-1) and y2<(image_height-1)
                    
