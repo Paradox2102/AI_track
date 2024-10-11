@@ -213,6 +213,7 @@ class Server:
                     image_with_boxes = img.copy()
                     # print("about to push context")
                     starttimeInference = time.time()
+                    print("time to copy images:",starttimeInference-time1)
                     # ctx.push() #making context
                     # print("pushed context")
                     detections, t = model.Inference(clone_img) #clone_img is the image with the bad bounding boxes drawn on it
@@ -225,6 +226,7 @@ class Server:
                     image_border_filter = 10 #the number of pixels the note has to be inside of the camera's view in order to be seen
                     bounding_boxes=[i['box'] for i in detections]
                     bounding_boxes = [i for i in bounding_boxes if i[0]>0+image_border_filter and i[1]>0+image_border_filter and i[2]<(image_width-image_border_filter) and i[3]<(image_height-image_border_filter)]
+                    time3 = time.time()
                     for box in bounding_boxes:
                         # print(image_with_boxes,box[:2],box[2:])
                         box = [int(i) for i in box]
@@ -234,7 +236,8 @@ class Server:
                     # x1,y1,x2,y2=box
                       #  if detections and x1>0 and y1>0 and x2<(image_width-1) and y2<(image_height-1)
                    
-                   
+                    t1 = time.time()
+                    print("drawing boxes time:",t1-time3)
                     if detections:
                         for box in bounding_boxes:
                             
@@ -247,6 +250,8 @@ class Server:
                                 #  font = cv2.FONT_HERSHEY_SIMPLEX
                                 #  for i, value in enumerate(tvec):                     
                                      #cv2.putText(image_with_boxes,str(value), (50,20+i*20),font,1,(0,50,0))
+                    t2 = time.time()
+                    print("solve pnp time:",t2-t1)
                     self.latest_predicted_img=image_with_boxes
                     #displaying image is display is avalible
                     if 'DISPLAY' in os.environ:
@@ -285,6 +290,9 @@ class Server:
                     data=bounding_box_str
                     #print('data:',data)
                     #print('detections:',detections)
+                    enddtime = time.time()
+                    print("image processing time:",enddtime-time1)
+                    print("image processing fps:",1/(enddtime-time1))
                     self.rio_service.send_data(data)
                 elif not (time.time()-latest_image_time)<1:
                     print('IMAGES TOO OLD, camera not functioning')

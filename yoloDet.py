@@ -79,8 +79,16 @@ class YoloTRT():
 
     def Inference(self, img):
         t0 = time.time()
+
         input_image, image_raw, origin_h, origin_w = self.PreProcessImg(img)
+        t1 = time.time()
+        print("time to preprocess image:", t1-t0)
+        
         np.copyto(host_inputs[0], input_image.ravel())
+
+        t2 = time.time()
+        print("time for np.copyto:",t2-t1)
+
         stream = cuda.Stream()
         self.context = self.engine.create_execution_context()
         cuda.memcpy_htod_async(cuda_inputs[0], host_inputs[0], stream)
@@ -104,7 +112,7 @@ class YoloTRT():
             det["conf"] = result_scores[j]
             det["box"] = box 
             det_res.append(det)
-            self.PlotBbox(box, img, label="{}:{:.2f}".format(self.categories[int(result_classid[j])], result_scores[j]),)
+            # self.PlotBbox(box, img, label="{}:{:.2f}".format(self.categories[int(result_classid[j])], result_scores[j]),)
         t3 = time.time()
         print("t3-t2:",t3-t2)
         return det_res, t2-t1
